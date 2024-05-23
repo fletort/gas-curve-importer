@@ -1,4 +1,4 @@
-const Settings = (()=>{
+const DevSettings = (()=>{
   return {
     sheets: {
       curve_mail_import: {

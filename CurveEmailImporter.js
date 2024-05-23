@@ -363,8 +363,8 @@ class CurveEmailImporter {
 
 
 function DEV() {
-	var ss = SpreadsheetApp.openById(Settings.sheets.curve_mail_import.sheetId);
-  var sheet = ss.getSheetByName(Settings.sheets.curve_mail_import.sheetName)
+	var ss = SpreadsheetApp.openById(DevSettings.sheets.curve_mail_import.sheetId);
+  var sheet = ss.getSheetByName(DevSettings.sheets.curve_mail_import.sheetName)
   let my = new CurveEmailImporter({sheet: sheet});
   //let op = my.parseEmailId("18ef4bf7c80d569e");
   //my.updateDataToSheet([op]);
