@@ -189,6 +189,7 @@ class CurveEmailImporter {
    * - parseThreads
    * - addDataToSheet
    * - markAsImported
+   * @return {CurveImportResult} - Object contening information on the result of the whole process.
    */
   importNewEmails() {
     const result = new CurveImportResult();
@@ -204,6 +205,7 @@ class CurveEmailImporter {
       result.nbOperationsNotAdded += opNotAdded.length;
       threads = this.emailSearch();
     }
+    return result;
   }
   
   /**
