@@ -12,6 +12,46 @@ var CurveImportedMailBehaviour = {
 }
 
 /**
+ * Class used to store and return result of the {@link CurveEmailImporter#importNewEmails} method.
+ */
+class CurveImportResult {
+  constructor() {
+    /** Number of Gmail Thread detected. */
+    this.nbThreadDetected = 0;
+    /** Number of Message/Operations detected. */
+    this.nbOperationsDetected = 0;
+    /** Number of Operations with a paring error status. */
+    this.nbOperationsInError = 0;
+    /** Number of Operations not added/updated as already present. */
+    this.nbOperationsNotAdded = 0;
+    /** Indicates if the sheet header row was updated or not. */
+    this.isHeaderUpdated = false;
+  }
+
+  /**
+   * Get Curve Import Report in a simple string list.
+   */
+  getResultString() {
+    const message = "";
+    if (this.isHeaderUpdated) {
+      message += `- Header of curve sheet was updated.\n`;
+    }
+    message += `- Number of Threads detected: ${this.nbThreadDetected}.\n`;
+    if (this.nbOperationsDetected > 0) {
+      message += `- Number of Operations detected: ${this.nbOperationsDetected}.\n`;
+    }
+    if (this.nbOperationsInError > 0) {
+      message += `- Number of Operations in Error: ${this.nbOperationsInError}.\n`;
+    }
+    if (this.nbOperationsNotAdded > 0) {
+      message += `- Number of Operations not Added as already present: ${this.nbOperationsNotAdded}`;
+    }
+    
+    return message;
+  }
+}
+
+/**
  * Import Curve Operation from Email to a Google Sheet. This class is the main class for the Curve Email Import service.
  * 
  * Main Global Methods are:
@@ -151,16 +191,27 @@ class CurveEmailImporter {
    * - markAsImported
    */
   importNewEmails() {
-    this.sheetUpdateHeader();
+    const result = new CurveImportResult();
+    result.isHeaderUpdated = this.sheetUpdateHeader();
     let threads = this.emailSearch();
     while(threads.length > 0) {
+      result.nbThreadDetected += threads.length;
       let operations = this.emailParseThreads(threads);
-      this.sheetAddOperations(operations);
+      let opNotAdded = this.sheetAddOperations(operations);
       this.emailMarkAsImported(threads);
+      result.nbOperationsDetected += operations.length;
+      result.nbOperationsInError += operations.filter(op => op.error != undefined).length
+      result.nbOperationsNotAdded += opNotAdded.length;
       threads = this.emailSearch();
     }
   }
-
+  
+  /**
+   * Parse All given Emails.
+   * For each Email Message found inside given threads the method {@link CurveEmailImporter.emailParse} is called to parse the email.
+   * @param {[GmailApp.GmailThread]} threads - Array of Threads where messages will be parsed to found for Curve Operations
+   * @return {[CurveEmailOperation]} - List of Curve Operations parsed from given Emails
+   */
   emailParseThreads(threads) {
     let operations = threads.reduce((accumulator, thread, index) => {
         accumulator.push(...thread.getMessages().map(message => this.emailParse(message)))
@@ -172,11 +223,23 @@ class CurveEmailImporter {
     return operations;
   }
 
+
+  /**
+   * Parse given Email.
+   * This method use the method {@link CurveEmailImporter.emailParse}
+   * @param {string} gmailId - gmailId of the email to parse
+   * @return {CurveEmailOperation} - Curve Operation parsed from given Email.
+   */
   emailParseId(gmailId) {
     const message = GmailApp.getMessageById(gmailId);
     return this.emailParse(message);
   }
 
+  /**
+   * Parse given Email.
+   * @param {GmailApp.GmailMessage} message - email message to parse
+   * @return {CurveEmailOperation} - Curve Operation parsed from given Email.
+   */
   emailParse(message) {
     let regExp = null;
     let emailSubject = message.getSubject();
@@ -262,7 +325,11 @@ class CurveEmailImporter {
     return operation;
   }
 
+  /**
+   * Update Sheet Header if needed
+   */
   sheetUpdateHeader() {
+    const isUpdated = false;
     const headerRange = this.sheet.getRange(1, 1, 1, this.sheet.getLastColumn());
     const headerValues = headerRange.getValues()[0];
     const fakeOp = new CurveEmailOperation({mailId: 11, mailDate: new Date(Date.now())});
@@ -273,17 +340,21 @@ class CurveEmailImporter {
       if (isEmpty || (this.sheet.getLastRow() == 1)) {
         Logger.log("Headers are initialized")
         this.sheet.getRange(1, 1, 1, waitedHeaders.length).setValues([waitedHeaders])
+        isUpdated=true;
       }
       else {
         throw new Error("Migration is needed.")
       }
     }
+    return isUpdated;
   }
 
   /**
-   * Add Curve Email Transaction Information to Dedicated Sheet Cache.
-   * @param {SpreadsheetApp.Sheet} sheet      - The sheet cache
+   * Add Curve Operations to Dedicated Sheet Cache.
+   * If an operation is already present, it will not be add or modified.
+   * See the {@link CurveEmailImporter.sheetUpdateOperations} method for modification/udpate.
    * @param {[CurveEmailOperation]} operations - List of Operations to add
+   * @return {[CurveEmailOperation]} - List of Operations not added (as already present)
   */
   sheetAddOperations(operations) {
     const range = this.sheet.getDataRange();
@@ -292,6 +363,7 @@ class CurveEmailImporter {
 
     // Keep Only new Operations (remove already present)
     const operationsToAdd = operations.filter(operation => existingOperations.find((exOp) => exOp[0] == operation.mailId) == undefined);
+    const operationsNotAdded = operations.filter(operation => existingOperations.find((exOp) => exOp[0] == operation.mailId) != undefined);
     
     if (operationsToAdd.length > 0) {
       Logger.log(operationsToAdd.length + " new operations will be added");
@@ -299,8 +371,16 @@ class CurveEmailImporter {
       const newRange = this.sheet.getRange(range.getNumRows()+1, 1, valuesToAdd.length, valuesToAdd[0].length);
       newRange.setValues(valuesToAdd);
     }
+
+    return operationsNotAdded;
   }
 
+  /**
+   * Update Curve Operations to Dedicated Sheet Cache.
+   * If a given operation  does not already exist in the sheet, it will be added.
+   * The {@link CurveEmailImporter.sheetAddOperations} method can be used to add only operations (without any modification)
+   * @param {[CurveEmailOperation]} operations - List of Operations to update
+  */
   sheetUpdateOperations(operations) {
     const range = this.sheet.getDataRange();
     const values = range.getValues().slice(1);
