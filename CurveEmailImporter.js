@@ -331,18 +331,24 @@ class CurveEmailImporter {
    * Update Sheet Header if needed
    */
   sheetUpdateHeader() {
-    const isUpdated = false;
-    const headerRange = this.sheet.getRange(1, 1, 1, this.sheet.getLastColumn());
-    const headerValues = headerRange.getValues()[0];
+    let isUpdated = false;
     const fakeOp = new CurveEmailOperation({mailId: 11, mailDate: new Date(Date.now())});
     const waitedHeaders = fakeOp.getHeaderRow();
-    const headersOk = headerValues.equals(waitedHeaders);
+    let headersOk = false;
+    let isEmpty = true;
+    
+    if (this.sheet.getLastColumn() > 0) {
+      const headerRange = this.sheet.getRange(1, 1, 1, this.sheet.getLastColumn());
+      const headerValues = headerRange.getValues()[0];
+      headersOk = headerValues.equals(waitedHeaders);
+      isEmpty = headerValues.every((element) => element == "")
+    }
     if (headersOk == false) {
-      const isEmpty = headerValues.every((element) => element == "")
+      
       if (isEmpty || (this.sheet.getLastRow() == 1)) {
         Logger.log("Headers are initialized")
         this.sheet.getRange(1, 1, 1, waitedHeaders.length).setValues([waitedHeaders])
-        isUpdated=true;
+        isUpdated = dtrue;
       }
       else {
         throw new Error("Migration is needed.")
