@@ -81,7 +81,7 @@ class CurveEmailImporter {
                importedLabel="_imported",
                searchLabel="",
                sender="support@imaginecurve.com",
-               batchNumber=10}) {
+               batchNumber=100}) {
     this.sheet = sheet;
     this.searchForMailMethod = searchForMailMethod;
     this.importedMailBehaviour = importedMailBehaviour;
