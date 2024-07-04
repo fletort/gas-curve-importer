@@ -1,3 +1,5 @@
+
+// TODO: move to simple var/const to have native toString ??
 class ECurveEmailOperationType {
   
   constructor(name) {

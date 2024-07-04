@@ -11,45 +11,8 @@ var CurveImportedMailBehaviour = {
   MarkAsRead: 4
 }
 
-/**
- * Class used to store and return result of the {@link CurveEmailImporter#importNewEmails} method.
- */
-class CurveImportResult {
-  constructor() {
-    /** Number of Gmail Thread detected. */
-    this.nbThreadDetected = 0;
-    /** Number of Message/Operations detected. */
-    this.nbOperationsDetected = 0;
-    /** Number of Operations with a paring error status. */
-    this.nbOperationsInError = 0;
-    /** Number of Operations not added/updated as already present. */
-    this.nbOperationsNotAdded = 0;
-    /** Indicates if the sheet header row was updated or not. */
-    this.isHeaderUpdated = false;
-  }
 
-  /**
-   * Get Curve Import Report in a simple string list.
-   */
-  getResultString() {
-    const message = "";
-    if (this.isHeaderUpdated) {
-      message += `- Header of curve sheet was updated.\n`;
-    }
-    message += `- Number of Threads detected: ${this.nbThreadDetected}.\n`;
-    if (this.nbOperationsDetected > 0) {
-      message += `- Number of Operations detected: ${this.nbOperationsDetected}.\n`;
-    }
-    if (this.nbOperationsInError > 0) {
-      message += `- Number of Operations in Error: ${this.nbOperationsInError}.\n`;
-    }
-    if (this.nbOperationsNotAdded > 0) {
-      message += `- Number of Operations not Added as already present: ${this.nbOperationsNotAdded}`;
-    }
-    
-    return message;
-  }
-}
+
 
 /**
  * Import Curve Operation from Email to a Google Sheet. This class is the main class for the Curve Email Import service.
@@ -67,12 +30,12 @@ class CurveEmailImporter {
   /**
    * @constructor Build a new instance of CurveEmailImporter.
    * @param {Object} params - The unique object named parameter
-   * @param {SpreadsheetApp.Sheet} params.sheet - The Sheet object contening the managed curve operations.
+   * @param {SpreadsheetApp.sheet} params.sheet - The Sheet object contening the managed curve operations.
    * @param {number} params.searchForMailMethod - Mask defining the searchs Method used, based on the CurveSearchForMailMethod Flags.
    * @param {number} params.importedMailBehaviour - Mask defining the action made on the imported messages, based on the CurveImportedMailBehaviour Flags.
    * @param {string} params.importedLabel - The label to apply on the imported messages when the CurveImportedMailBehaviour.ApplyLabel method is activated.
    * @param {string} params.searchLabel  - The name of the user label to search for when the CurveSearchForMailMethod.ByUserLabel method is activated.
-   * @param {string} params.sender - The number of the creditCard used by Curve for this operation.
+   * @param {string} params.sender - The sender mail used by curve.
    * @param {number} params.batchNumber - The messages batch number (messages are imported x by x).
    */
   constructor({sheet,
@@ -83,8 +46,8 @@ class CurveEmailImporter {
                sender="support@imaginecurve.com",
                batchNumber=100}) {
     this.sheet = sheet;
-    this.searchForMailMethod = searchForMailMethod;
-    this.importedMailBehaviour = importedMailBehaviour;
+    this.searchBehaviour = searchForMailMethod;
+    this.importedAction = importedMailBehaviour;
     this.importedLabel = importedLabel;
     this.searchLabel = searchLabel;
     this.sender = sender;
@@ -103,29 +66,29 @@ class CurveEmailImporter {
   emailCreateSearchFilter() {
     let searchFilter = "";
 
-    if (this.searchForMailMethod & CurveSearchForMailMethod.BySender) {
+    if (this.searchBehaviour & CurveSearchForMailMethod.BySender) {
       if (this.sender == undefined || this.sender == "") {
         throw new Error("Sender must be defined to can be used in search filter")
       }
       searchFilter += " from:" + this.sender;
     }
-    if (this.searchForMailMethod & CurveSearchForMailMethod.ByUserLabel) {
+    if (this.searchBehaviour & CurveSearchForMailMethod.ByUserLabel) {
       if (this.searchLabel == undefined || this.searchLabel == "") {
         throw new Error("searchLabel must be defined to can be used in search filter")
       }
       searchFilter += " label:"+ this.searchLabel;
     }
 
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.MoveToArchive) {
+    if (this.importedAction & CurveImportedMailBehaviour.MoveToArchive) {
       searchFilter += " -in:archive";
     }
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.ApplyLabel) {
+    if (this.importedAction & CurveImportedMailBehaviour.ApplyLabel) {
       if (this.importedLabel == undefined || this.importedLabel == "") {
         throw new Error("importedLabel must be defined to can be used to identify imported emails")
       }
       searchFilter += " -label:"+ this.importedLabel;
     }
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.MarkAsRead) {
+    if (this.importedAction & CurveImportedMailBehaviour.MarkAsRead) {
       searchFilter += " is:unread";
     }
 
@@ -162,10 +125,10 @@ class CurveEmailImporter {
    * threads are marked as Read.
    */
   emailMarkAsImported(threads) {
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.MoveToArchive) {
+    if (this.importedAction & CurveImportedMailBehaviour.MoveToArchive) {
       threads.forEach(thread => thread.moveToArchive());
     }
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.ApplyLabel) {
+    if (this.importedAction & CurveImportedMailBehaviour.ApplyLabel) {
       if (this.importedLabel == undefined || this.importedLabel == "") {
           throw new Error("importedLabel must be defined to can be used to identify imported emails")
       }
@@ -175,7 +138,7 @@ class CurveEmailImporter {
       }
       threads.forEach(thread => thread.addLabel(importedLabel));
     }
-    if (this.importedMailBehaviour & CurveImportedMailBehaviour.MarkAsRead) {
+    if (this.importedAction & CurveImportedMailBehaviour.MarkAsRead) {
       threads.forEach(thread => thread.markRead());
     }
   }
@@ -189,22 +152,35 @@ class CurveEmailImporter {
    * - parseThreads
    * - addDataToSheet
    * - markAsImported
-   * @return {CurveImportResult} - Object contening information on the result of the whole process.
+   * @return {CurveEmailImporterResult} - Object contening information on the result of the whole process.
    */
   importNewEmails() {
-    const result = new CurveImportResult();
+    const result = new CurveEmailImporterResult();
     result.isHeaderUpdated = this.sheetUpdateHeader();
+    Logger.log(`Start to search for Curve Emails Operations`);
     let threads = this.emailSearch();
-    while(threads.length > 0) {
+    Logger.log(`${threads.length} threads was found.`)
+    let loopTime = 60;
+    while(threads.length > 0 && Tools.isTimeLeft(loopTime)) {
+      const startLoopTime = Date.now();
       result.nbThreadDetected += threads.length;
       let operations = this.emailParseThreads(threads);
+      Logger.log(`${operations.length} operations was parsed.`)
       let opNotAdded = this.sheetAddOperations(operations);
+      Logger.log(`${operations.length} operations was add to the sheet.`)
       this.emailMarkAsImported(threads);
+      Logger.log(`${operations.length} operations was marked as imported.`)
       result.nbOperationsDetected += operations.length;
       result.nbOperationsInError += operations.filter(op => op.error != undefined).length
       result.nbOperationsNotAdded += opNotAdded.length;
       threads = this.emailSearch();
+      loopTime = (Date.now() - startLoopTime) / 1000;
     }
+    if (threads.length > 0) {
+      Logger.log(`Stop before Timeout: No all emails was managed.`)
+      result.isTimeout = true;
+    }
+
     return result;
   }
   
@@ -274,7 +250,7 @@ class CurveEmailImporter {
       else {
         Logger.log("ERROR - Curve Update Operation not managed: '" + emailSubject + "'");
         operation.error = ECurveEmailImportErrorType.UpdateOperationNotManaged;
-        Logger.log('Email text content: ' + emailBody);
+        //Logger.log('Email text content: ' + emailBody);
         return operation;
       }
     }
@@ -292,7 +268,7 @@ class CurveEmailImporter {
     }
     else {
       Logger.log("ERROR - Curve email content (supplier/amount/date) not parsed: '" + emailSubject + "'");
-      Logger.log('Email text content: ' + emailBody);
+      //Logger.log('Email text content: ' + emailBody);
       operation.error = ECurveEmailImportErrorType.ContentSuppplierAmoundDateNotParsed;
       return operation;
     }
@@ -305,7 +281,7 @@ class CurveEmailImporter {
     }
     else {
       Logger.log("ERROR - Curve email content (creditCard Informations) not parsed: '" + emailSubject + "'");
-      Logger.log('Email text content: ' + emailBody);
+      //Logger.log('Email text content: ' + emailBody);
       operation.error = ECurveEmailImportErrorType.ContentCreditCardNotParsed;
       return operation;
     }
@@ -316,13 +292,13 @@ class CurveEmailImporter {
     }
     else {
       Logger.log("ERROR - Curve email content (transactionDescription) not parsed: '" + emailSubject + "'");
-      Logger.log('Email text content: ' + emailBody);
+      //Logger.log('Email text content: ' + emailBody);
       operation.error = ECurveEmailImportErrorType.ContentTransactionDescriptionNotParsed;
       return operation;
     }
     
     //Logger.log(operation.stringify());
-    Logger.log("Email " + operation.mailId + " was parsed successfully")
+    //Logger.log("Email " + operation.mailId + " was parsed successfully")
 
     return operation;
   }
@@ -348,7 +324,7 @@ class CurveEmailImporter {
       if (isEmpty || (this.sheet.getLastRow() == 1)) {
         Logger.log("Headers are initialized")
         this.sheet.getRange(1, 1, 1, waitedHeaders.length).setValues([waitedHeaders])
-        isUpdated = dtrue;
+        isUpdated = true;
       }
       else {
         throw new Error("Migration is needed.")
